@@ -4,16 +4,48 @@ import csv
 import os
 
 # -------------------------------
+# Select team member
+# -------------------------------
+print("\n==============================")
+print("Who is collecting the data?")
+print("1. Rijwana")
+print("2. Deepak")
+print("3. Monika")
+print("==============================")
+
+choice = input("Enter your choice (1/2/3): ").strip()
+
+members = {
+    "1": "Rijwana",
+    "2": "Deepak",
+    "3": "Monika"
+}
+
+if choice not in members:
+    print("Invalid choice!")
+    exit()
+
+member = members[choice]
+
+# -------------------------------
 # Enter the label (A, B, C...)
 # -------------------------------
 label = input("Enter Alphabet (A-Z): ").strip().upper()
 
-# -------------------------------
-# Create Data folder
-# -------------------------------
-os.makedirs("Data", exist_ok=True)
+if len(label) != 1 or not label.isalpha():
+    print("Invalid alphabet!")
+    exit()
 
-dataset_file = "Data/dataset.csv"
+# -------------------------------
+# Create member Data folder
+# -------------------------------
+dataset_folder = os.path.join("Data", member)
+
+os.makedirs(dataset_folder, exist_ok=True)
+
+dataset_file = os.path.join(dataset_folder, "dataset.csv")
+
+print(f"\nData will be saved to: {dataset_file}")
 
 # -------------------------------
 # MediaPipe Hands
@@ -40,6 +72,8 @@ if not cap.isOpened():
 sample_count = 0
 
 print("\n==============================")
+print(f"Collector : {member}")
+print(f"Alphabet  : {label}")
 print("Press S -> Save Sample")
 print("Press Q -> Quit")
 print("==============================\n")
@@ -77,21 +111,31 @@ while True:
 
     cv2.putText(
         frame,
-        f"Alphabet : {label}",
+        f"Collector : {member}",
         (10, 35),
         cv2.FONT_HERSHEY_SIMPLEX,
-        1,
-        (0,255,0),
+        0.8,
+        (0, 255, 0),
+        2
+    )
+
+    cv2.putText(
+        frame,
+        f"Alphabet : {label}",
+        (10, 70),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.8,
+        (0, 255, 0),
         2
     )
 
     cv2.putText(
         frame,
         f"Samples : {sample_count}",
-        (10, 75),
+        (10, 105),
         cv2.FONT_HERSHEY_SIMPLEX,
-        1,
-        (0,255,0),
+        0.8,
+        (0, 255, 0),
         2
     )
 
@@ -111,7 +155,7 @@ while True:
 
             sample_count += 1
 
-            print(f"Sample {sample_count} saved")
+            print(f"Sample {sample_count} saved for {member}")
 
         else:
             print("Hand not detected!")
