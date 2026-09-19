@@ -1,89 +1,80 @@
 import cv2
 import mediapipe as mp
-import csv
+import pandas as pd
 import os
+import time
 
-# -------------------------------
-# Select team member
-# -------------------------------
-print("\n==============================")
-print("Who is collecting the data?")
-print("1. Rijwana")
-print("2. Deepak")
-print("3. Monika")
-print("==============================")
+# ==========================================
+# GET COLLECTOR AND SIGN
+# ==========================================
 
-choice = input("Enter your choice (1/2/3): ").strip()
+collector = input("Enter collector name: ").strip().upper()
+label = input("Enter alphabet/sign: ").strip().upper()
 
-members = {
-    "1": "Rijwana",
-    "2": "Deepak",
-    "3": "Monika"
-}
+# ==========================================
+# SETTINGS
+# ==========================================
 
-if choice not in members:
-    print("Invalid choice!")
-    exit()
+TOTAL_SAMPLES = 50
+SAVE_INTERVAL = 0.5
 
-member = members[choice]
+# ==========================================
+# CREATE INDIVIDUAL FOLDER AND CSV
+# ==========================================
 
-# -------------------------------
-# Enter the label (A, B, C...)
-# -------------------------------
-label = input("Enter Alphabet (A-Z): ").strip().upper()
+collector_folder = os.path.join("Data", collector.capitalize())
 
-if len(label) != 1 or not label.isalpha():
-    print("Invalid alphabet!")
-    exit()
+os.makedirs(collector_folder, exist_ok=True)
 
-# -------------------------------
-# Create member Data folder
-# -------------------------------
-dataset_folder = os.path.join("Data", member)
+dataset_path = os.path.join(
+    collector_folder,
+    f"dataset_{collector.lower()}.csv"
+)
 
-os.makedirs(dataset_folder, exist_ok=True)
+print("\n===================================")
+print("DATA COLLECTION STARTED")
+print("Collector:", collector)
+print("Sign:", label)
+print("Saving to:", dataset_path)
+print("===================================\n")
 
-dataset_file = os.path.join(dataset_folder, "dataset.csv")
+# ==========================================
+# MEDIAPIPE SETUP
+# ==========================================
 
-print(f"\nData will be saved to: {dataset_file}")
-
-# -------------------------------
-# MediaPipe Hands
-# -------------------------------
 mp_hands = mp.solutions.hands
 mp_draw = mp.solutions.drawing_utils
 
 hands = mp_hands.Hands(
     static_image_mode=False,
-    max_num_hands=1,
-    min_detection_confidence=0.7,
-    min_tracking_confidence=0.7
+    max_num_hands=2,
+    min_detection_confidence=0.5,
+    min_tracking_confidence=0.5
 )
 
-# -------------------------------
-# Open Webcam
-# -------------------------------
+# ==========================================
+# OPEN CAMERA
+# ==========================================
+
 cap = cv2.VideoCapture(0)
 
 if not cap.isOpened():
-    print("Error: Cannot open webcam.")
+    print("ERROR: Cannot open webcam")
     exit()
 
 sample_count = 0
+last_save_time = time.time()
 
-print("\n==============================")
-print(f"Collector : {member}")
-print(f"Alphabet  : {label}")
-print("Press S -> Save Sample")
-print("Press Q -> Quit")
-print("==============================\n")
+# ==========================================
+# DATA COLLECTION LOOP
+# ==========================================
 
-while True:
+while sample_count < TOTAL_SAMPLES:
 
-    ret, frame = cap.read()
+    success, frame = cap.read()
 
-    if not ret:
-        print("Failed to read camera.")
+    if not success:
+        print("ERROR: Cannot read camera")
         break
 
     frame = cv2.flip(frame, 1)
@@ -92,77 +83,155 @@ while True:
 
     results = hands.process(rgb)
 
-    landmarks = []
+    # --------------------------------------
+    # ALWAYS CREATE 126 FEATURES
+    # 63 = first hand
+    # 63 = second hand
+    # --------------------------------------
+
+    landmarks = [0.0] * 126
+
+    hands_detected = 0
 
     if results.multi_hand_landmarks:
 
-        hand = results.multi_hand_landmarks[0]
+        hands_detected = len(results.multi_hand_landmarks)
 
-        mp_draw.draw_landmarks(
-            frame,
-            hand,
-            mp_hands.HAND_CONNECTIONS
-        )
+        for i, hand_landmarks in enumerate(
+            results.multi_hand_landmarks
+        ):
 
-        for lm in hand.landmark:
-            landmarks.append(lm.x)
-            landmarks.append(lm.y)
-            landmarks.append(lm.z)
+            if i >= 2:
+                break
 
-    cv2.putText(
-        frame,
-        f"Collector : {member}",
-        (10, 35),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.8,
-        (0, 255, 0),
-        2
-    )
+            # Draw landmarks
+            mp_draw.draw_landmarks(
+                frame,
+                hand_landmarks,
+                mp_hands.HAND_CONNECTIONS
+            )
 
-    cv2.putText(
-        frame,
-        f"Alphabet : {label}",
-        (10, 70),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.8,
-        (0, 255, 0),
-        2
-    )
+            hand_data = []
 
-    cv2.putText(
-        frame,
-        f"Samples : {sample_count}",
-        (10, 105),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.8,
-        (0, 255, 0),
-        2
-    )
+            for lm in hand_landmarks.landmark:
 
-    cv2.imshow("Dataset Collection", frame)
+                hand_data.extend([
+                    lm.x,
+                    lm.y,
+                    lm.z
+                ])
 
-    key = cv2.waitKey(1) & 0xFF
+            # Save first hand → 0 to 62
+            # Save second hand → 63 to 125
 
-    if key == ord('s'):
+            start = i * 63
 
-        if len(landmarks) == 63:
+            landmarks[start:start + 63] = hand_data
 
-            with open(dataset_file, "a", newline="") as file:
+        # --------------------------------------
+        # AUTOMATIC SAVE
+        # --------------------------------------
 
-                writer = csv.writer(file)
+        current_time = time.time()
 
-                writer.writerow(landmarks + [label])
+        if current_time - last_save_time >= SAVE_INTERVAL:
+
+            # 126 landmarks + label + collector
+            data = landmarks + [label, collector]
+
+            df = pd.DataFrame([data])
+
+            df.to_csv(
+                dataset_path,
+                mode="a",
+                header=not os.path.exists(dataset_path),
+                index=False
+            )
 
             sample_count += 1
 
-            print(f"Sample {sample_count} saved for {member}")
+            last_save_time = current_time
 
-        else:
-            print("Hand not detected!")
+            print(
+                f"✓ SAVED {sample_count}/{TOTAL_SAMPLES} | "
+                f"Sign: {label} | "
+                f"Hands detected: {hands_detected}"
+            )
 
-    elif key == ord('q'):
+    # ==========================================
+    # DISPLAY INFORMATION
+    # ==========================================
+
+    cv2.putText(
+        frame,
+        f"Collector: {collector}",
+        (10, 40),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        (0, 255, 0),
+        2
+    )
+
+    cv2.putText(
+        frame,
+        f"Sign: {label}",
+        (10, 75),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        (0, 255, 0),
+        2
+    )
+
+    cv2.putText(
+        frame,
+        f"Samples: {sample_count}/{TOTAL_SAMPLES}",
+        (10, 110),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        (0, 255, 0),
+        2
+    )
+
+    cv2.putText(
+        frame,
+        f"Hands detected: {hands_detected}",
+        (10, 145),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        (0, 255, 0),
+        2
+    )
+
+    cv2.putText(
+        frame,
+        "Press Q to stop",
+        (10, 180),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.6,
+        (0, 0, 255),
+        2
+    )
+
+    cv2.imshow(
+        "ISL Data Collection",
+        frame
+    )
+
+    # Quit
+    if cv2.waitKey(1) & 0xFF == ord("q"):
         break
+
+
+# ==========================================
+# CLOSE EVERYTHING
+# ==========================================
 
 cap.release()
 hands.close()
 cv2.destroyAllWindows()
+
+print("\n===================================")
+print("DATA COLLECTION COMPLETED!")
+print("Total samples:", sample_count)
+print("Saved in:", dataset_path)
+print("===================================")
